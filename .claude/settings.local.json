@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(command -v convert)",
+      "Bash(command -v rsvg-convert)",
+      "Bash(command -v inkscape)",
+      "Bash(command -v python3)",
+      "Bash(rsvg-convert -w 192 -h 192 icon.svg -o icon-192.png)",
+      "Bash(rsvg-convert -w 512 -h 512 icon.svg -o icon-512.png)",
+      "Bash(python3 -c ' *)",
+      "Bash(node --check app.js)",
+      "Bash(node --check sw.js)",
+      "Bash(npm install *)",
+      "Bash(npx next *)"
+    ]
+  }
+}
