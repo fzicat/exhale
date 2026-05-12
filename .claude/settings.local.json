@@ -11,7 +11,8 @@
       "Bash(node --check app.js)",
       "Bash(node --check sw.js)",
       "Bash(npm install *)",
-      "Bash(npx next *)"
+      "Bash(npx next *)",
+      "Bash(npx tsc *)"
     ]
   }
 }

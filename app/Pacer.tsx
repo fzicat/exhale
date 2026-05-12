@@ -3,12 +3,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 const STORE_KEY = "exhale.settings.v1";
-const DEFAULTS = { inhale: 4.0, exhale: 6.0, wakeLock: false };
+const DEFAULTS = { inhale: 4.0, exhale: 6.0, warning: 1.0, wakeLock: false };
 const PITCH = { high: 880, medium: 660, low: 392 }; // A5, E5, G4
 const LOOKAHEAD = 12.0;
 const SCHEDULE_INTERVAL_MS = 2000;
 
-type Settings = { inhale: number; exhale: number; wakeLock: boolean };
+type Settings = { inhale: number; exhale: number; warning: number; wakeLock: boolean };
 
 function sanitize(v: unknown, fallback: number): number {
   const n = Number(v);
@@ -16,6 +16,13 @@ function sanitize(v: unknown, fallback: number): number {
   // 1 decimal precision, clamp to a sane range
   const rounded = Math.round(n * 10) / 10;
   return Math.min(60, Math.max(0.5, rounded));
+}
+
+function sanitizeWarning(v: unknown, fallback: number): number {
+  const n = Number(v);
+  if (!Number.isFinite(n) || n < 0) return fallback;
+  const rounded = Math.round(n * 10) / 10;
+  return Math.min(30, Math.max(0.1, rounded));
 }
 
 function loadSettings(): Settings {
@@ -27,6 +34,7 @@ function loadSettings(): Settings {
     return {
       inhale: sanitize(obj.inhale, DEFAULTS.inhale),
       exhale: sanitize(obj.exhale, DEFAULTS.exhale),
+      warning: sanitizeWarning(obj.warning, DEFAULTS.warning),
       wakeLock: !!obj.wakeLock,
     };
   } catch {
@@ -54,6 +62,7 @@ export default function Pacer() {
   const cycleStartRef = useRef(0);
   const inhaleDurRef = useRef(DEFAULTS.inhale);
   const exhaleDurRef = useRef(DEFAULTS.exhale);
+  const warningDurRef = useRef(DEFAULTS.warning);
   const lastScheduledThroughRef = useRef(0);
   const runningRef = useRef(false);
   const scheduleTimerRef = useRef<number | null>(null);
@@ -66,6 +75,7 @@ export default function Pacer() {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const inhaleInputRef = useRef<HTMLInputElement>(null);
   const exhaleInputRef = useRef<HTMLInputElement>(null);
+  const warningInputRef = useRef<HTMLInputElement>(null);
   const wakeInputRef = useRef<HTMLInputElement>(null);
 
   // Load persisted settings on mount
@@ -74,6 +84,7 @@ export default function Pacer() {
     setSettings(s);
     inhaleDurRef.current = s.inhale;
     exhaleDurRef.current = s.exhale;
+    warningDurRef.current = s.warning;
     wantWakeLockRef.current = s.wakeLock;
   }, []);
 
@@ -162,6 +173,7 @@ export default function Pacer() {
     const horizon = now + LOOKAHEAD;
     const inhale = inhaleDurRef.current;
     const exhale = exhaleDurRef.current;
+    const warning = warningDurRef.current;
     const cycle = inhale + exhale;
     if (cycle <= 0) return;
 
@@ -171,12 +183,12 @@ export default function Pacer() {
     for (let s = nStart; s <= horizon; s += cycle) {
       const events: Array<{ t: number; freq: number; gate: boolean }> = [
         { t: s, freq: PITCH.high, gate: true },
-        { t: s + Math.max(0, inhale - 1), freq: PITCH.medium, gate: inhale > 1 },
+        { t: s + Math.max(0, inhale - warning), freq: PITCH.medium, gate: inhale > warning },
         { t: s + inhale, freq: PITCH.low, gate: true },
         {
-          t: s + inhale + Math.max(0, exhale - 1),
+          t: s + inhale + Math.max(0, exhale - warning),
           freq: PITCH.medium,
-          gate: exhale > 1,
+          gate: exhale > warning,
         },
       ];
       for (const e of events) {
@@ -252,6 +264,7 @@ export default function Pacer() {
     }
     inhaleDurRef.current = settings.inhale;
     exhaleDurRef.current = settings.exhale;
+    warningDurRef.current = settings.warning;
     cycleStartRef.current = ctx.currentTime + 0.15;
     lastScheduledThroughRef.current = ctx.currentTime;
     runningRef.current = true;
@@ -265,7 +278,7 @@ export default function Pacer() {
     if (rafRef.current === null) {
       rafRef.current = requestAnimationFrame(tick);
     }
-  }, [ensureAudio, requestWakeLock, scheduleAhead, settings.exhale, settings.inhale, tick]);
+  }, [ensureAudio, requestWakeLock, scheduleAhead, settings.exhale, settings.inhale, settings.warning, tick]);
 
   const stopPacer = useCallback(() => {
     runningRef.current = false;
@@ -282,15 +295,21 @@ export default function Pacer() {
   }, [cancelFutureChimes, releaseWakeLock]);
 
   const applySettingsChange = useCallback(
-    (newInhale: number, newExhale: number, newWakeLock: boolean) => {
+    (newInhale: number, newExhale: number, newWarning: number, newWakeLock: boolean) => {
       const prevInhale = inhaleDurRef.current;
       const prevExhale = exhaleDurRef.current;
-      const next: Settings = { inhale: newInhale, exhale: newExhale, wakeLock: newWakeLock };
+      const next: Settings = {
+        inhale: newInhale,
+        exhale: newExhale,
+        warning: newWarning,
+        wakeLock: newWakeLock,
+      };
       setSettings(next);
       try {
         localStorage.setItem(STORE_KEY, JSON.stringify(next));
       } catch {}
       wantWakeLockRef.current = newWakeLock;
+      warningDurRef.current = newWarning;
 
       if (!runningRef.current) {
         inhaleDurRef.current = newInhale;
@@ -365,6 +384,7 @@ export default function Pacer() {
     if (!dlg) return;
     if (inhaleInputRef.current) inhaleInputRef.current.value = settings.inhale.toFixed(1);
     if (exhaleInputRef.current) exhaleInputRef.current.value = settings.exhale.toFixed(1);
+    if (warningInputRef.current) warningInputRef.current.value = settings.warning.toFixed(1);
     if (wakeInputRef.current) wakeInputRef.current.checked = settings.wakeLock;
     if (typeof dlg.showModal === "function") dlg.showModal();
     else dlg.setAttribute("open", "");
@@ -377,8 +397,9 @@ export default function Pacer() {
     ev.preventDefault();
     const newInhale = sanitize(inhaleInputRef.current?.value, settings.inhale);
     const newExhale = sanitize(exhaleInputRef.current?.value, settings.exhale);
+    const newWarning = sanitizeWarning(warningInputRef.current?.value, settings.warning);
     const newWake = !!wakeInputRef.current?.checked;
-    applySettingsChange(newInhale, newExhale, newWake);
+    applySettingsChange(newInhale, newExhale, newWarning, newWake);
     dialogRef.current?.close();
   };
 
@@ -444,6 +465,18 @@ export default function Pacer() {
               min="0.5"
               max="60"
               defaultValue={settings.exhale.toFixed(1)}
+            />
+          </label>
+          <label>
+            Warning chime lead time (seconds)
+            <input
+              ref={warningInputRef}
+              type="number"
+              inputMode="decimal"
+              step="0.1"
+              min="0.1"
+              max="30"
+              defaultValue={settings.warning.toFixed(1)}
             />
           </label>
           <label className="check">
